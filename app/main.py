@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="PQC Risk Assessor API",
@@ -7,9 +8,25 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Enable CORS for local development and production frontends
+origins = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:3000",
+    "*"  # Allows access from any origin (ideal for team integration)
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers (including X-API-Key)
+)
+
 # 1. Define header name and secret key
 API_KEY_NAME = "X-API-Key"
-SECRET_API_KEY = "pqc_secret_team_key_2026"  # Change this to your preferred secret key
+SECRET_API_KEY = "pqc_secret_team_key_2026"
 
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 

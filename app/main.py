@@ -1,108 +1,147 @@
 
-import os
-from fastapi import FastAPI, Depends, HTTPException, Security, status
-from fastapi.security.api_key import APIKeyHeader
-from fastapi.middleware.cors import CORSMiddleware
+ from fastapi import FastAPI, HTTPException, Header, Depends, status
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 
-# --------------------------------------------------
-# 1. FASTAPI APPLICATION
-# --------------------------------------------------
 app = FastAPI(
     title="PQC Risk Assessor API",
-    description="Defensive Post-Quantum Cryptography Risk Assessment Engine",
-    version="1.0.0"
+    version="1.0.0",
+    description="Defensive Post-Quantum Cryptography Risk Assessment Engine"
 )
 
-# --------------------------------------------------
-# 2. CORS CONFIGURATION
-# --------------------------------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for seamless frontend integration
-    allow_credentials=False,
-    allow_methods=["*"],  # Allows GET, POST, OPTIONS, etc.
-    allow_headers=["*"],  # Allows X-API-Key, Content-Type, etc.
-)
+# Shared Team API Key authentication
+TEAM_API_KEY = "pqc_secret_team_key_2026"
 
-# --------------------------------------------------
-# 3. API KEY CONFIGURATION & IN-MEMORY STORAGE
-# --------------------------------------------------
-API_KEY_NAME = "X-API-Key"
-SECRET_API_KEY = os.getenv("PQC_API_KEY")
-
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
-
-# In-memory storage for assets during active session
-assets_db = []
-
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    if not SECRET_API_KEY:
+def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
+    if x_api_key != TEAM_API_KEY:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="API authentication is not configured."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-API-Key header"
         )
-    if not api_key or api_key != SECRET_API_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access Denied: Invalid or missing API Key"
-        )
-    return api_key
+    return x_api_key
 
-# --------------------------------------------------
-# 4. PUBLIC ENDPOINTS
-# --------------------------------------------------
-@app.get("/")
+
+# In-Memory Database for Session Assets
+assets_db: List[Dict[str, Any]] = [
+    {
+        "id": 1,
+        "name": "Legacy RSA Keypair",
+        "algorithm": "RSA-2048",
+        "category": "Asymmetric",
+        "system": "Auth Gateway"
+    },
+    {
+        "id": 2,
+        "name": "TLS Certificate Key",
+        "algorithm": "ECDSA P-256",
+        "category": "Digital Signature",
+        "system": "Web Proxy"
+    }
+]
+
+
+# Data Models
+class AssetCreate(BaseModel):
+    name: str
+    algorithm: str
+    category: str
+    system: str
+
+class AssetUpdate(BaseModel):
+    name: Optional[str] = None
+    algorithm: Optional[str] = None
+    category: Optional[str] = None
+    system: Optional[str] = None
+
+class RiskAssessmentRequest(BaseModel):
+    algorithm: str
+    key_size: Optional[int] = None
+
+
+# --- 1. Root & Health Endpoints (Public) ---
+
+@app.get("/", tags=["Public"])
 def read_root():
-    return {"status": "online", "message": "PQC-Ready FastAPI Backend is running!"}
+    return {"message": "PQC Risk Assessor API is online"}
 
-@app.get("/health")
+@app.get("/health", tags=["Public"])
 def health_check():
-    return {"status": "healthy", "service": "PQC Risk Assessor API"}
+    return {"status": "healthy", "service": "pqc-backend"}
 
-# --------------------------------------------------
-# 5. PROTECTED ENDPOINTS
-# --------------------------------------------------
-@app.get("/status", dependencies=[Depends(verify_api_key)])
-def get_status():
+
+# --- 2. Authentication Verification ---
+
+@app.get("/status", tags=["Auth Check"])
+def get_status(api_key: str = Depends(verify_api_key)):
+    return {"status": "authenticated", "message": "API key valid"}
+
+
+# --- 3. PQC Risk Assessment Engine ---
+
+@app.post("/assess", tags=["Risk Engine"])
+def assess_risk(payload: RiskAssessmentRequest, api_key: str = Depends(verify_api_key)):
+    algo = payload.algorithm.upper()
+    
+    # Quantum-vulnerable algorithms
+    if "RSA" in algo or "ECDSA" in algo or "DH" in algo or "ECDH" in algo:
+        risk_score = 9.5
+        status_label = "Vulnerable to Quantum Attack (CRITICAL)"
+        recommendation = "Migrate immediately to ML-KEM (Kyber) or ML-DSA (Dilithium)."
+    # Post-Quantum Cryptography standards
+    elif "ML-KEM" in algo or "KYBER" in algo or "ML-DSA" in algo or "DILITHIUM" in algo or "SPHINCS" in algo:
+        risk_score = 1.2
+        status_label = "PQC-Ready (SAFE)"
+        recommendation = "Maintain current quantum-safe configuration."
+    # Symmetric encryption (AES-256 vs AES-128 under Grover's algorithm)
+    elif "AES" in algo:
+        if payload.key_size and payload.key_size >= 256:
+            risk_score = 2.0
+            status_label = "Quantum Resilient (SAFE)"
+            recommendation = "AES-256 provides adequate resistance against Grover's algorithm."
+        else:
+            risk_score = 6.0
+            status_label = "Moderate Risk"
+            recommendation = "Upgrade key size to AES-256 to counter quantum search speedups."
+    else:
+        risk_score = 5.0
+        status_label = "Unknown Algorithm"
+        recommendation = "Review algorithm specification against NIST PQC standards."
+
     return {
-        "status": "authenticated",
-        "system": "PQC-Ready Risk Assessor Engine",
-        "access": "Granted"
+        "algorithm": payload.algorithm,
+        "key_size": payload.key_size,
+        "risk_score": risk_score,
+        "status": status_label,
+        "recommendation": recommendation
     }
 
-@app.post("/assess", dependencies=[Depends(verify_api_key)])
-def assess_risk(data: dict):
-    # Calculate score dynamically
-    assessment_result = {
-        "status": "success",
-        "input_received": data,
-        "pqc_risk_score": 85
-    }
-    return assessment_result
 
-# Save asset to in-memory list
-@app.post("/assets", dependencies=[Depends(verify_api_key)])
-def save_asset(asset: dict):
-    # Automatically compute risk score before saving if not present
-    if "pqc_risk_score" not in asset:
-        asset["pqc_risk_score"] = 85
-    assets_db.append(asset)
-    return {
-        "status": "success",
-        "message": "Asset saved successfully",
-        "asset": asset,
-        "total_assets": len(assets_db)
-    }
+# --- 4. Asset Management Endpoints (Full CRUD for Member 2) ---
 
-# Retrieve all saved assets
-@app.get("/assets", dependencies=[Depends(verify_api_key)])
-def get_assets():
-    return {
-        "status": "success",
-        "assets": assets_db,
-        "count": len(assets_db)
-    }
+@app.get("/assets", tags=["Assets"])
+def get_assets(api_key: str = Depends(verify_api_key)):
+    return {"assets": assets_db}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+@app.post("/assets", tags=["Assets"], status_code=status.HTTP_201_CREATED)
+def create_asset(asset: AssetCreate, api_key: str = Depends(verify_api_key)):
+    new_id = max([a["id"] for a in assets_db], default=0) + 1
+    new_asset = {"id": new_id, **asset.dict()}
+    assets_db.append(new_asset)
+    return {"message": "Asset added successfully", "asset": new_asset}
+
+@app.put("/assets/{asset_id}", tags=["Assets"])
+def update_asset(asset_id: int, updated_data: AssetUpdate, api_key: str = Depends(verify_api_key)):
+    for index, asset in enumerate(assets_db):
+        if asset["id"] == asset_id:
+            update_dict = {k: v for k, v in updated_data.dict().items() if v is not None}
+            assets_db[index].update(update_dict)
+            return {"message": "Asset updated successfully", "asset": assets_db[index]}
+    raise HTTPException(status_code=404, detail=f"Asset with ID {asset_id} not found")
+
+@app.delete("/assets/{asset_id}", tags=["Assets"])
+def delete_asset(asset_id: int, api_key: str = Depends(verify_api_key)):
+    for index, asset in enumerate(assets_db):
+        if asset["id"] == asset_id:
+            deleted_asset = assets_db.pop(index)
+            return {"message": "Asset deleted successfully", "asset": deleted_asset}
+    raise HTTPException(status_code=404, detail=f"Asset with ID {asset_id} not found")

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
@@ -6,6 +7,22 @@ app = FastAPI(
     title="PQC Risk Assessor API",
     version="1.0.0",
     description="Defensive Post-Quantum Cryptography Risk Assessment Engine"
+)
+
+# Configure CORS Middleware for Frontend Access
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://pqc-ready-frontend.onrender.com",
+    "*"  # Allows all origins for development smooth testing
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Permits requests from React frontend
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Key", "Authorization"],
 )
 
 # Shared Team API Key authentication
